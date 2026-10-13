@@ -51,6 +51,8 @@ Um wrapper sobre o cliente oficial do ZooKeeper, que cuida de:
 - **Nós efêmeros:** registro dos brokers vivos (`/brokers/ids/<id>`). Se um broker cai, o nó some sozinho
 - **Watches:** callbacks para mudanças em nós e nos filhos de um nó, registrados de novo a cada disparo, porque watches do ZooKeeper disparam uma vez só
 
+![Árvore de nós do ZooKeeper usada pelo cluster](docs/zookeeper-tree.png)
+
 ### Armazenamento: `Partition`
 
 Cada partição é um **log append-only** dividido em **segmentos** de até 1 MB. Cada segmento tem um par de arquivos com o nome do primeiro offset que ele contém:

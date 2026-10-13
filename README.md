@@ -51,6 +51,8 @@ A wrapper around the official ZooKeeper client that handles:
 - **Ephemeral nodes:** registration of live brokers (`/brokers/ids/<id>`). If a broker dies, its node disappears on its own
 - **Watches:** callbacks for changes to a node or its children, re-registered on every trigger, since ZooKeeper watches only fire once
 
+![ZooKeeper node tree used by the cluster](docs/zookeeper-tree.en.png)
+
 ### Storage: `Partition`
 
 Each partition is an **append-only log** split into **segments** of up to 1 MB. Each segment is a pair of files named after the first offset it contains:
