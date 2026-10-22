@@ -1,11 +1,14 @@
 package com;
 
-import com.simplekafka.broker.Partition;
-import com.simplekafka.broker.ZookeeperClient;
+import com.simplekafka.broker.BrokerInfo;
+import com.simplekafka.broker.Protocol;
 import org.apache.zookeeper.KeeperException;
 
 import java.io.IOException;
-import java.time.LocalTime;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.SocketChannel;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -20,38 +23,59 @@ public class Main {
     }
 
     public static void main(String[] args) throws IOException, InterruptedException, KeeperException {
-        ZookeeperClient zk = new ZookeeperClient("localhost", 2181);
-        zk.connect();
-        System.out.println("Connected to Zookeeper");
-        zk.createPersistentNode("/topics/pedidos", "{\"partitions\":2}");
-        zk.createEphemeralNode("/brokers/ids/1", "{\"host\":\"localhost\",\"port\":9091}");
-        System.out.println("Topic: " + zk.getData("/topics/pedidos"));
-        System.out.println("Broker: " + zk.getData("/brokers/ids/1"));
-        zk.watchChildren("/brokers/ids", children ->
-                System.out.println(">>> Brokers vivos: " + children));
-        zk.createEphemeralNode("/brokers/ids/1", "broker1");
-        Thread.sleep(500);
-        zk.createEphemeralNode("/brokers/ids/2", "broker2");
+        SocketChannel ch = SocketChannel.open(new InetSocketAddress("localhost", 9091));
 
-        zk.watchNode("/controller", () -> System.out.println(">>> Controller mudou!"));
-        zk.createEphemeralNode("/controller", "{\"broker\":1}");
-        zk.close();
+        ByteBuffer req = Protocol.encodeCreateTopicRequest("pagamentos", 2, (short) 2);
+        while (req.hasRemaining()) {
+            ch.write(req);
+        }
 
-        Partition p = new Partition(0, 1, List.of(), "data/pedidos-0");
-        p.append("oi".getBytes());
-        p.append("tchau".getBytes());
-        p.append("kafka".getBytes());
+        ByteBuffer response = ByteBuffer.allocate(1024);
+        ch.read(response);
+        response.flip();
 
-        print("a partir do 0", p.readMessages(0, 1000));   // [oi, tchau, kafka]
-        print("a partir do 1", p.readMessages(1, 1000));   // [tchau, kafka]
-        print("maxBytes 6",    p.readMessages(0, 6));      // [oi]          (oi=2, +tchau=7 > 6)
-        print("maxBytes 1",    p.readMessages(0, 1));      // [oi]          (a primeira sempre vem)
-        print("offset 3",      p.readMessages(3, 1000));   // []            (ainda não existe)
-        long offset = p.append(("execução às " + LocalTime.now()).getBytes());
-        System.out.println("Gravei no offset " + offset);
-        print("Tudo na partição", p.readMessages(0, 100000));
-        p.close();
-        System.out.println("Partição criada!");
+        byte type = response.get();
+        if (type == Protocol.CREATE_TOPIC_RESPONSE) {
+            System.out.println("Tópico criado!");
+        } else {
+            short len = response.getShort();
+            byte[] bytes = new byte[len];
+            response.get(bytes);
+            System.out.println("Erro: " + new String(bytes, StandardCharsets.UTF_8));
+        }
+
+        // 1. monta e envia o pedido (só 1 byte: o tipo METADATA)
+        ByteBuffer request = Protocol.encodeMetadataRequest();
+        while (request.hasRemaining()) {
+            ch.write(request);
+        }
+
+        // 2. lê a resposta
+        ByteBuffer response2 = ByteBuffer.allocate(64 * 1024);
+        ch.read(response2);
+        response2.flip();
+
+        // 3. decodifica com o seu decoder do Stage 2
+        Protocol.MetadataResult result = Protocol.decodeMetadataResponse(response2);
+        ch.close();
+
+        if (!result.isSuccess()) {
+            System.out.println("Erro: " + result.getError());
+            return;
+        }
+
+        // 4. imprime
+        for (BrokerInfo b : result.getBrokers()) {
+            System.out.println(b);
+        }
+
+        for (Protocol.TopicMetadata t : result.getTopics()) {
+            System.out.println("Tópico: " + t.getName());
+            for (Protocol.PartitionMetadata p : t.getPartitions()) {
+                System.out.println("  partição " + p.getId() + " → líder " + p.getLeader() + ", réplicas " + p.getReplicas());
+            }
+        }
+        ch.close();
         }
 
     }

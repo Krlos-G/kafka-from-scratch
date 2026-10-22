@@ -153,4 +153,19 @@ public class ZookeeperClient implements Watcher {
             LOGGER.log(Level.SEVERE, "Failed to watch node: " + path, e);
         }
     }
+
+    public boolean exists(String path) throws KeeperException, InterruptedException {
+
+        return zooKeeper.exists(path, false) != null;
+    }
+
+    public void deleteNode(String path) throws KeeperException, InterruptedException {
+
+        zooKeeper.delete(path, -1);
+    }
+
+    public List<String> getChildren(String path) throws  KeeperException, InterruptedException {
+
+        return zooKeeper.getChildren(path, false);
+    }
 }
